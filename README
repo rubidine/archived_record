@@ -1,0 +1,13 @@
+ArchivedRecord
+==============
+
+Set a record to be archived using the field archived_at (timestamp).
+
+class MyModel < ActiveRecord::Base
+  archived_record
+end
+
+MyModel.find # => will ignore archived records
+MyModel.find(:first).archive! # => will mark a record as archived
+
+Copyright (c) 2009 Todd Willey <todd@rubidine.com>, released under the MIT license
