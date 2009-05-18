@@ -27,6 +27,7 @@ module ArchivedRecord
   module ClassMethods
     def archived_record
       include InstanceMethods
+      extend InteriorClassMethods
       add_named_scopes
       set_default_scope
     end
@@ -38,7 +39,34 @@ module ArchivedRecord
     end
 
     def set_default_scope
-      default_scope :find => {:conditions => 'archived_at IS NULL'}
+      default_scope :conditions => {:archived_at => nil}
+    end
+  end
+
+  module InteriorClassMethods
+    def after_archive *args, &blk
+      options = args.extract_options!
+      options.symbolize_keys!
+      ar_callback = options[:callback] || :after_save
+      append_after_archive_callback(ar_callback, args.first || blk)
+      hook_after_archive_into_callback(ar_callback)
+    end
+
+    private
+    def append_after_archive_callback ar_cb, callback
+      cbc = read_inheritable_attribute(:after_archive_callbacks)
+      cbc ||= {}
+      cbc[ar_cb] ||= []
+      cbc[ar_cb] << callback
+      write_inheritable_attribute(:after_archvie_callbacks, cbc)
+    end
+
+    def hook_after_archive_into_callback ar_cb
+      cbc = instance_variable_get("@#{ar_cb}_callbacks")
+      return if cbc and cbc.detect{|x| x.identifier == 'after_archive'}
+      send ar_cb, :identifier => 'after_archive' do |inst|
+        inst.send :run_after_archvie_callbacks, ar_cb
+      end
     end
   end
 
@@ -54,6 +82,18 @@ module ArchivedRecord
     def archive! time=Time.now
       return if archived?
       update_attribute(:archived_at, time)
+    end
+
+    private
+    def run_after_archive_callbacks ar_cb
+      return unless changes['archived_at'] and archived_at?
+      chain = self.class.read_inheritable_attribute(:after_archive)
+      return true unless chain and chain[ar_cb]
+      chain[ar_cb].inject(true){|m,x| m && eval_after_archive_callback(x)}
+    end
+
+    def eval_after_archive_callback cb
+      cb.is_a?(Symbol) ? send(cb) : instance_eval(&cb)
     end
   end
 end
